@@ -15,9 +15,9 @@ function Serializer:new(registry)
         ["number"]   = obj._write_number,
         ["string"]   = obj._write_string,
         ["table"]    = obj._write_table,
-        ["function"] = obj._write_link,
-        ["userdata"] = obj._write_link,
-        ["thread"]   = obj._write_link,
+        ["function"] = obj._write_registry_only,
+        ["userdata"] = obj._write_registry_only,
+        ["thread"]   = obj._write_registry_only,
     }
 
     return obj
@@ -28,7 +28,7 @@ end
 function Serializer:write(data, writer)
     local ctx = {
         seen = {},
-        ref_counter = 0,
+        ref_counter = 1,
         writer = writer
     }
 
@@ -41,6 +41,12 @@ function Serializer:write(data, writer)
 end
 
 function Serializer:_serialize(val, ctx)
+    local reg_id = self.registry:get_id(val)
+    if reg_id then
+        self:_write_link_id(reg_id, ctx)
+        return
+    end
+    
     local t = type(val)
     local func = self.dispatch[t]
     if not func then error("Unsupported type: " .. t) end
@@ -102,30 +108,28 @@ function Serializer:_write_string(val, ctx)
     ctx.writer:write(val)
 end
 
-function Serializer:_write_link(val, ctx)
-    local id = self.registry:get_id(val)
-    if not id then error("Object not in registry: " .. tostring(val)) end
-    self:_write_link_id(id, ctx)
+function Serializer:_write_registry_only(val, _)
+    error("Object of this type can only be predefined in registry: " .. tostring(val))
 end
 
 function Serializer:_write_link_id(id, ctx)
-    if id <= Constants.MAX_SMALL_LNK then
+    if id >= 0 and id <= Constants.MAX_SMALL_LNK then
         ctx.writer:write(string.pack("<B", Constants.SMALL_LNK_START + id))
-    elseif id <= 0xFF then
-        ctx.writer:write(string.pack("<BI1", Constants.LNK_I1, id))
-    elseif id <= 0xFFFF then
-        ctx.writer:write(string.pack("<BI2", Constants.LNK_I2, id))
-    elseif id <= 0xFFFFFFFF then
-        ctx.writer:write(string.pack("<BI4", Constants.LNK_I4, id))
+    elseif id >= -0x80 and id <= 0x7F then
+        ctx.writer:write(string.pack("<Bi1", Constants.LNK_I1, id))
+    elseif id >= -0x8000 and id <= 0x7FFF then
+        ctx.writer:write(string.pack("<Bi2", Constants.LNK_I2, id))
+    elseif id >= -0x80000000 and id <= 0x7FFFFFFF then
+        ctx.writer:write(string.pack("<Bi4", Constants.LNK_I4, id))
     else
-        ctx.writer:write(string.pack("<BI8", Constants.LNK_I8, id))
+        ctx.writer:write(string.pack("<Bi8", Constants.LNK_I8, id))
     end
 end
 
 function Serializer:_write_table(val, ctx)
     -- 1. Check seen (Link to already serialized table)
     if ctx.seen[val] then
-        self:_write_link_id(ctx.seen[val], ctx)
+        self:_write_link_id(-ctx.seen[val], ctx)
         return
     end
 
@@ -138,14 +142,14 @@ function Serializer:_write_table(val, ctx)
     -- 3. Write Anchor Byte (0xFF)
     ctx.writer:write(string.pack("<B", Constants.TABLE_START))
 
-    -- 4. Single Pass pairs
+    -- 4. Streaming
     for k, v in pairs(val) do
         self:_serialize(k, ctx)
         self:_serialize(v, ctx)
     end
 
     -- 5. Write key=nil to terminate
-    self:_write_nil(nil, ctx)
+    self:_serialize(nil, ctx)
 end
 
 return Serializer

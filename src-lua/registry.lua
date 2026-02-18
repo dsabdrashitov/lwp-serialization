@@ -56,6 +56,9 @@ end
 --- Returns the ID associated with an object.
 -- @return number or nil
 function Registry:get_id(obj)
+    if obj == nil then
+        return nil
+    end
     return self.obj_to_id[obj]
 end
 
