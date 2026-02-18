@@ -1,0 +1,159 @@
+src-lua/serializer.lua
+Этот класс отвечает за преобразование Lua-объектов в поток байтов через предоставленный writer.
+code
+Lua
+local Serializer = {}
+local module_path = (...):match("(.-)[^%.]+$")
+local Constants = require(module_path .. "constants")
+
+Serializer.__index = Serializer
+
+function Serializer:new(registry)
+    local obj = setmetatable({}, self)
+    obj.registry = registry
+
+    -- Таблица диспетчеризации для быстрого роутинга по типам Lua
+    obj.dispatch = {
+        ["nil"]      = obj._write_nil,
+        ["boolean"]  = obj._write_boolean,
+        ["number"]   = obj._write_number,
+        ["string"]   = obj._write_string,
+        ["table"]    = obj._write_table,
+        ["function"] = obj._write_link,
+        ["userdata"] = obj._write_link,
+        ["thread"]   = obj._write_link,
+    }
+
+    return obj
+end
+
+--- Публичный интерфейс для записи данных.
+-- @param object Любой Lua-объект для сериализации.
+-- @param writer Объект (StringWriter, FileWriter), имеющий метод write(data).
+-- @return true в случае успеха, или (nil, error_string) при сбое.
+function Serializer:write(object, writer)
+    local ctx = {
+        seen = {},          -- Реестр таблиц для детекции циклов [ref] -> id
+        ref_counter = 0,    -- Счетчик ID для таблиц
+        writer = writer
+    }
+
+    -- Используем pcall для безопасной глубокой рекурсии
+    local ok, result = pcall(self._serialize, self, object, ctx)
+    if ok then
+        return true
+    else
+        return nil, result
+    end
+end
+
+function Serializer:_serialize(val, ctx)
+    local t = type(val)
+    local func = self.dispatch[t]
+    if not func then error("Unsupported type: " .. t) end
+    func(self, val, ctx)
+end
+
+-- --- Обработчики типов ---
+
+function Serializer:_write_nil(val, ctx)
+    ctx.writer:write(string.pack("<B", Constants.NIL))
+end
+
+function Serializer:_write_boolean(val, ctx)
+    ctx.writer:write(string.pack("<B", val and Constants.TRUE or Constants.FALSE))
+end
+
+function Serializer:_write_number(val, ctx)
+    if math.type(val) == "integer" then
+        -- 1. Small Int: 0..110 (картируется на 0x90..0xFE)
+        if val >= 0 and val <= Constants.MAX_SMALL_INT then
+            ctx.writer:write(string.pack("<B", Constants.SMALL_INT_START + val))
+            return
+        end
+
+        -- 2. Fixed Integers (знаковые i1, i2, i4, i8)
+        if val >= -0x80 and val <= 0x7F then
+            ctx.writer:write(string.pack("<Bi1", Constants.I8, val))
+        elseif val >= -0x8000 and val <= 0x7FFF then
+            ctx.writer:write(string.pack("<Bi2", Constants.I16, val))
+        elseif val >= -0x80000000 and val <= 0x7FFFFFFF then
+            ctx.writer:write(string.pack("<Bi4", Constants.I32, val))
+        else
+            ctx.writer:write(string.pack("<Bi8", Constants.I64, val))
+        end
+    else
+        -- 3. Float64
+        ctx.writer:write(string.pack("<Bd", Constants.FLOAT64, val))
+    end
+end
+
+function Serializer:_write_string(val, ctx)
+    local len = #val
+    -- Заголовок: Small String (0..63) или Fixed String
+    if len <= Constants.MAX_SMALL_STR then
+        ctx.writer:write(string.pack("<B", Constants.SMALL_STR_START + len))
+    elseif len <= 0xFF then
+        ctx.writer:write(string.pack("<BI1", Constants.STR_I1, len))
+    elseif len <= 0xFFFF then
+        ctx.writer:write(string.pack("<BI2", Constants.STR_I2, len))
+    elseif len <= 0xFFFFFFFF then
+        ctx.writer:write(string.pack("<BI4", Constants.STR_I4, len))
+    else
+        ctx.writer:write(string.pack("<BI8", Constants.STR_I8, len))
+    end
+    -- Тело строки
+    ctx.writer:write(val)
+end
+
+function Serializer:_write_table(val, ctx)
+    -- 1. Проверка на циклические ссылки
+    if ctx.seen[val] then
+        self:_write_link_id(ctx.seen[val], ctx)
+        return
+    end
+
+    -- 2. Регистрация таблицы ПЕРЕД записью содержимого
+    local ref_id = ctx.ref_counter
+    ctx.ref_counter = ctx.ref_counter + 1
+    ctx.seen[val] = ref_id
+
+    -- 3. Запись маркера начала таблицы (0xFF)
+    ctx.writer:write(string.pack("<B", Constants.TABLE_START))
+
+    -- 4. Стриминг пар Ключ-Значение
+    for k, v in pairs(val) do
+        self:_serialize(k, ctx)
+        self:_serialize(v, ctx)
+    end
+
+    -- 5. Запись NIL (0x00) как терминатора таблицы
+    self:_write_nil(nil, ctx)
+end
+
+function Serializer:_write_link(val, ctx)
+    local id = self.registry:get_id(val)
+    if not id then error("Object not in registry: " .. tostring(val)) end
+    self:_write_link_id(id, ctx)
+end
+
+function Serializer:_write_link_id(id, ctx)
+    -- Упаковка ID ссылки: Small Lnk (0..63) или Fixed Lnk
+    if id <= Constants.MAX_SMALL_LNK then
+        ctx.writer:write(string.pack("<B", Constants.SMALL_LNK_START + id))
+    elseif id <= 0xFF then
+        ctx.writer:write(string.pack("<BI1", Constants.LNK_I1, id))
+    elseif id <= 0xFFFF then
+        ctx.writer:write(string.pack("<BI2", Constants.LNK_I2, id))
+    elseif id <= 0xFFFFFFFF then
+        ctx.writer:write(string.pack("<BI4", Constants.LNK_I4, id))
+    else
+        ctx.writer:write(string.pack("<BI8", Constants.LNK_I8, id))
+    end
+end
+
+return Serializer
+Ключевые моменты для восстановления контекста:
+Детекция циклов: Работает через ctx.seen. Важно, что ref_id присваивается до начала итерации по pairs, что позволяет таблице содержать ссылку на саму себя.
+Sentinel Таблицы: Используется Constants.NIL (0x00) в конце каждой таблицы. Так как ключи в Lua не могут быть nil, это однозначный признак конца потока пар.
+Типы чисел: Используется math.type(val) для корректной записи целых и дробных чисел, что критично для Lua 5.4.
