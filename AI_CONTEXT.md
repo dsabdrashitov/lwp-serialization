@@ -1,4 +1,3 @@
-Context for the library I'm using. Adhere to these specs.
 AI Context: LWP-Serialization (v2.3)
 Purpose
 A pure Lua 5.4 binary serialization library. It supports cyclic references (graphs) and a predefined object registry. Optimized for size and speed using a single-byte header map.
