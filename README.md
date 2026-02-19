@@ -54,6 +54,7 @@ print(string.format("Encoded size: %d bytes", #bytes))
 local decoded = codec:decode(bytes)
 assert(decoded.meta == shared_config)
 assert(decoded.self_ref.root == decoded)
+```
 
 ## Binary Protocol Overview
 
