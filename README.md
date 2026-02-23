@@ -16,7 +16,7 @@ A lightweight, high-performance binary serialization library for **Lua 5.4**. De
 
 ## Installation
 
-1. Download the library (e.g., `lib.zip` from releases).
+1. Download the library (e.g., [`lib.zip`][binary] from releases).
 2. Extract into your project. The structure should be:
    - `lwp_serialization_v_2_4.lua` (Proxy loader)
    - `lwp_serialization_v_2_4/` (Module directory)
@@ -104,3 +104,5 @@ Rich error objects with:
 ## Development Note
 
 This project is **AI-assisted**. The architecture and implementation were developed through a collaborative process between a human engineer and Artificial Intelligence to ensure high code quality, efficiency, and adherence to Lua 5.4 standards.
+
+[binary]:https://github.com/dsabdrashitov/lwp-serialization/releases/download/v.2.4/lib.zip

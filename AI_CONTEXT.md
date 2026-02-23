@@ -1,4 +1,4 @@
-# AI Context: LWP-Serialization (v.2.4)
+# AI Context: lwp-serialization (v.2.4)
 
 ## Project Purpose
 A pure Lua 5.4 library for binary serialization (LWP protocol v.2.4). 
@@ -50,7 +50,7 @@ The library uses a custom `SerializationError` class to wrap all failures.
 - Use `SerializationError:defines(err_obj)` to check if a returned error is an instance of the library's error class.
 - The error object contains `.message`, `.type`, `.cause` (inner error), and `.traceback`.
 
-## Binary Protocol (v.2.4 "Anchor")
+## Binary Protocol (v.2.4)
 - **Endianness**: Always Little-Endian (`<`).
 - **Floats**: IEEE 754 Double Precision (8 bytes).
 - **Integers**: Uses `math.type()` to distinguish. Small integers (0-110) are embedded in the header (`0x90 + val`).
