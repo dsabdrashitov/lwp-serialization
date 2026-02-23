@@ -1,4 +1,5 @@
 local Registry = {}
+
 Registry.__index = Registry
 
 --- Creates a new Registry.
@@ -11,13 +12,16 @@ function Registry:new(initial_map)
 
     if initial_map then
         for id, item in pairs(initial_map) do
-            assert(type(id) == "number", "Initial registry ID must be a number")
-            assert(id >= 0, "Initial registry ID must be non negative")
-            obj.obj_to_id[item] = id
-            obj.id_to_obj[id] = item
+            local int_id = math.tointeger(id)
+            if not int_id or int_id < 0 then
+                error("Registry error: ID must be a non-negative integer")
+            end
+            
+            obj.obj_to_id[item] = int_id
+            obj.id_to_obj[int_id] = item
             -- Ensure next_id is always ahead of any manually assigned IDs
-            if id >= obj.next_id then
-                obj.next_id = id + 1
+            if int_id >= obj.next_id then
+                obj.next_id = int_id + 1
             end
         end
     end
@@ -26,10 +30,13 @@ function Registry:new(initial_map)
 end
 
 --- Registers an object using autoincrement ID.
--- If the object is already registered, returns existing ID.
--- @param obj The object to register (function, thread, userdata, etc.)
+-- @param obj The object to register.
 -- @return number The assigned ID.
 function Registry:register(obj)
+    if obj == nil then
+        return nil
+    end
+    
     if self.obj_to_id[obj] then
         return self.obj_to_id[obj]
     end
@@ -43,7 +50,7 @@ function Registry:register(obj)
     return id
 end
 
---- Removes an object from the registry by its value.
+--- Removes an object from the registry.
 -- @param obj The object to unregister.
 function Registry:unregister(obj)
     local id = self.obj_to_id[obj]
@@ -68,7 +75,7 @@ function Registry:get_obj(id)
     return self.id_to_obj[id]
 end
 
---- Clears all registered objects and resets the ID counter.
+--- Clears the registry.
 function Registry:clear()
     self.obj_to_id = {}
     self.id_to_obj = {}

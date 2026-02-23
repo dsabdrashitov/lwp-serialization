@@ -1,12 +1,12 @@
 # Library settings
-LIB_NAME := lwp_serialization_v_2_3
+LIB_NAME := lwp_serialization_v_2_4
 
 # Paths
 BUILD_DIR := ./build
 LIB_DEST_DIR := $(BUILD_DIR)/lib
-# Folder: build/lib/lwp_serialization_v_2_3/
+# Folder: build/lib/lwp_serialization_v_2_4/
 MODULE_DIR := $(LIB_DEST_DIR)/$(LIB_NAME)
-# Proxy: build/lib/lwp_serialization_v_2_3.lua
+# Proxy: build/lib/lwp_serialization_v_2_4.lua
 PROXY_FILE := $(LIB_DEST_DIR)/$(LIB_NAME).lua
 
 # Archive settings

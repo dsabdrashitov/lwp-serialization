@@ -1,4 +1,5 @@
 local StringReader = {}
+
 StringReader.__index = StringReader
 
 function StringReader:new(byte_array)
@@ -9,14 +10,15 @@ function StringReader:new(byte_array)
     return obj
 end
 
---- Reads exactly n bytes or throws an error.
+--- Reads exactly n bytes.
 -- @param n number of bytes to read
--- @return string (binary)
+-- @return string (binary) or nil, error_message
 function StringReader:read(n)
     local last = self.pos + n - 1
     if last > self.size then
-        error("Unexpected end of stream: requested " .. tostring(n) .. " bytes at " .. tostring(self.pos))
+        return nil, string.format("Unexpected end of stream: requested %d bytes at position %d", n, self.pos)
     end
+    
     local chunk = self.data:sub(self.pos, last)
     self.pos = last + 1
     return chunk

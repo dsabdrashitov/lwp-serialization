@@ -16,8 +16,13 @@ end
 
 --- Appends binary data to the buffer.
 -- @param data string (binary)
+-- @return true or nil, error_message
 function StringWriter:write(data)
+    -- if there_is_some_error then
+    --     return nil, "error description"
+    -- end
     self.buffer[#self.buffer + 1] = data
+    return true
 end
 
 --- Concatenates and returns the final string.

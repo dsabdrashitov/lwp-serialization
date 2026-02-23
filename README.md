@@ -1,77 +1,105 @@
-# lwp-serialization (v.2.3)
+# lwp-serialization (v.2.4)
 
-A lightweight, high-performance binary serialization library for **Lua 5.4**. Designed for efficient data transmission with native support for cyclic references (graphs) and predefined object registries.
+A lightweight, high-performance binary serialization library for **Lua 5.4**. Designed for efficient data transmission with native support for cyclic references (graphs), predefined object registries, and robust error handling.
 
 ## Key Features
 
-- **Pure Lua 5.4**: Uses native bitwise operators and `string.pack/unpack`. Zero dependencies.
-- **Graph Support**: Handles cyclic references and multiple references to the same table.
-- **Predefined Registry**: Allows mapping complex objects (functions, userdata, or common tables) to short IDs.
+- **Pure Lua 5.4**: Uses native bitwise operators and `string.pack/unpack`. No C-extensions or FFI required.
+- **Graph Support**: Naturally handles cyclic references and multiple pointers to the same table.
+- **Predefined Registry**: Map complex objects (functions, userdata, or common tables) to short, efficient IDs.
+- **Advanced Error Handling**: Distinguishes between `PROTOCOL` (format) and `TRANSPORT` (I/O) errors with full stack traces.
 - **Compact Format**:
-  - Small Integers (0-110) in 1 byte.
-  - Small Strings (up to 63 bytes) in 1 byte + body.
-  - Small Links (Registry 0-63) in 1 byte.
-- **Streaming-Friendly**: Table serialization uses a sentinel byte (`0x00`) instead of length-prefixing, allowing single-pass encoding.
+  - **Small Integers** (0-110) in 1 byte.
+  - **Small Strings** (up to 63 bytes) in 1 byte + body.
+  - **Small Links** (Registry IDs 0-63) in 1 byte.
+- **Streaming-Friendly**: Uses an "Anchor" (sentinel byte `0x00`) for tables, allowing single-pass encoding without pre-calculating sizes.
 
 ## Installation
 
-You can download the pre-built library package from the latest release:
-
-**[Download lib.zip](https://github.com/dsabdrashitov/lwp-serialization/releases/download/v.2.3/lib.zip)**
-
-1. Extract the contents into your project's directory.
-2. The package includes:
-   - `lwp_serialization_v_2_3.lua` (The proxy loader)
-   - `lwp_serialization_v_2_3/` (The module folder)
-3. Ensure the location is in your `LUA_PATH`.
+1. Download the library (e.g., `lib.zip` from releases).
+2. Extract into your project. The structure should be:
+   - `lwp_serialization_v_2_4.lua` (Proxy loader)
+   - `lwp_serialization_v_2_4/` (Module directory)
+3. Use `require` to load the library:
+```lua
+local lwps = require("lwp_serialization_v_2_4")
+```
 
 ## Quick Start
-
 ```lua
-local lwps = require("lwp_serialization_v_2_3")
+local lwps = require("lwp_serialization_v_2_4")
 
--- 1. Setup Registry (Optional)
+-- 1. Setup Registry for shared objects or non-serializable types
 local reg = lwps.Registry:new()
-local shared_config = { version = "2.3", mode = "production" }
-reg:register(shared_config)
+local shared_api = { version = "2.4", status = "stable" }
+reg:register(shared_api)
 
 -- 2. Initialize Codec
 local codec = lwps.Codec:new(reg)
 
--- 3. Prepare data with cyclic references
+-- 3. Prepare complex data (with cycles)
 local data = {
-    meta = shared_config,
-    content = "Hello LWP",
-    self_ref = {}
+    api = shared_api,
+    tags = {"lua", "binary", "fast"},
+    node = {}
 }
-data.self_ref.root = data -- Cycle
+data.node.parent = data -- Cyclic reference
 
--- 4. Encode to binary string
-local bytes = codec:encode(data)
-print(string.format("Encoded size: %d bytes", #bytes))
+-- 4. Encode to string
+local bytes, err = codec:encode(data)
+if not bytes then 
+    print("Error:", err)
+    return 
+end
 
--- 5. Decode back to Lua object
-local decoded = codec:decode(bytes)
-assert(decoded.meta == shared_config)
-assert(decoded.self_ref.root == decoded)
+-- 5. Decode with error checking
+local decoded, derr = codec:decode(bytes)
+if derr then
+    if lwps.SerializationError:defines(derr) then
+        print(string.format("Caught %s error: %s", derr.type, derr.message))
+    end
+    return
+end
+
+assert(decoded.api == shared_api)
+assert(decoded.node.parent == decoded)
 ```
 
-## Binary Protocol Overview
+## Binary Protocol Overview (v.2.4)
 
-The protocol uses a single-byte header to determine type and value for small data:
+The protocol uses a single-byte header to determine the data type and value for optimized "small" types.
 
-| Header Range | Category | Description |
+| Header Range | Type | Description |
 | :--- | :--- | :--- |
-| `0x00` | NIL / Sentinel | Marks end of tables or nil values |
-| `0x01 - 0x02` | Boolean | False / True |
-| `0x03` | Float | IEEE 754 Double |
-| `0x04 - 0x07` | Fixed Int | Signed integers (i8, i16, i32, i64) |
-| `0x08 - 0x0B` | Fixed Str | String with length prefix (I1, I2, I4, I8) |
-| `0x0C - 0x0F` | Fixed Link | Signed ID (Positive: Registry, Negative: Session) |
-| `0x10 - 0x4F` | Small Str | Length = Header - 0x10 (0 to 63 bytes) |
-| `0x50 - 0x8F` | Small Link | Registry ID = Header - 0x50 (0 to 63) |
-| `0x90 - 0xFE` | Small Int | Value = Header - 0x90 (0 to 110) |
-| `0xFF` | Table Start | Marks the beginning of a table stream |
+| `0x00` | **NIL** | Also acts as Table Terminator (Anchor) |
+| `0x01 - 0x02` | **BOOL** | False (`0x01`), True (`0x02`) |
+| `0x03` | **FLOAT** | IEEE 754 Double (8 bytes) |
+| `0x04 - 0x07` | **INT** | Signed Integers: i8, i16, i32, i64 |
+| `0x08 - 0x0B` | **STR** | Length-prefixed strings: uint8, 16, 32, 64 |
+| `0x0C - 0x0F` | **LNK** | Signed ID Links: Positive (Registry), Negative (Session) |
+| `0x10 - 0x4F` | **S-STR** | Small String: Length 0–63 (Header - 0x10) |
+| `0x50 - 0x8F` | **S-LNK** | Small Link: Registry ID 0–63 (Header - 0x50) |
+| `0x90 - 0xFE` | **S-INT** | Small Integer: Value 0–110 (Header - 0x90) |
+| `0xFF` | **TABLE** | Table Start Marker |
+
+## Component API
+
+### `Codec`
+High-level interface for most tasks.
+- `encode(object)`: Returns binary string or `nil, error`.
+- `decode(string)`: Returns Lua object or `nil, error`.
+
+### `Registry`
+Manages objects that should be referenced rather than serialized.
+- `register(obj)`: Assigns a persistent ID to an object.
+- Supports `function`, `userdata`, and `thread` types (must be registered on both sides).
+
+### `SerializationError`
+Rich error objects with:
+- `.type`: `PROTOCOL` (format violation) or `TRANSPORT` (buffer/stream issue).
+- `.message`: Description.
+- `.cause`: Original error (if any).
+- `.traceback`: Lua stack trace.
 
 ## Development Note
 
